@@ -6,6 +6,7 @@ Main FastAPI Application Entry Point
 from fastapi import Depends, FastAPI, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from backend.app.api.workflows import router as workflows_router
 from backend.app.database import get_db
 
 app = FastAPI(
@@ -13,6 +14,9 @@ app = FastAPI(
     description="Workflow Failure Recovery System API",
     version="0.1.0",
 )
+
+# Register routers
+app.include_router(workflows_router)
 
 
 @app.get("/health")
