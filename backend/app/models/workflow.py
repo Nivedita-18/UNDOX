@@ -6,13 +6,16 @@ Uses SQLAlchemy 2.0 style declarative mappings and UUID primary keys.
 import enum
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.database import Base
+
+if TYPE_CHECKING:
+    from backend.app.models.execution import WorkflowExecution
 
 
 class WorkflowStatus(str, enum.Enum):
@@ -90,6 +93,13 @@ class WorkflowInstance(Base):
         back_populates="workflow",
         cascade="all, delete-orphan",
         order_by="WorkflowStep.step_order",
+    )
+
+    # Relationship to executions
+    executions: Mapped[List["WorkflowExecution"]] = relationship(
+        back_populates="workflow",
+        cascade="all, delete-orphan",
+        order_by="WorkflowExecution.attempt_number",
     )
 
     def __repr__(self) -> str:

@@ -4,6 +4,12 @@ Exports all ORM models so they are registered with Base.metadata upon package im
 """
 
 from backend.app.database import Base
+from backend.app.models.execution import (
+    ExecutionStatus,
+    ExecutionStep,
+    ExecutionStepStatus,
+    WorkflowExecution,
+)
 from backend.app.models.workflow import (
     StepStatus,
     WorkflowInstance,
@@ -17,4 +23,8 @@ __all__ = [
     "WorkflowStep",
     "WorkflowStatus",
     "StepStatus",
+    "WorkflowExecution",
+    "ExecutionStep",
+    "ExecutionStatus",
+    "ExecutionStepStatus",
 ]
