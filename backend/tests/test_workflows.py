@@ -3,17 +3,67 @@ Tests for Workflow Registration and Inspection REST API endpoints and Pydantic s
 Covers validation rules, transactional persistence, ordering guarantees, and error handling.
 """
 
+import os
 import uuid
-from typing import Generator
+from typing import Generator, List, Tuple
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from backend.app.database import SessionLocal
+from backend.app.database import Base, get_db
 from backend.app.main import app
 from backend.app.models.workflow import WorkflowInstance, WorkflowStatus, StepStatus
 from backend.app.schemas.workflow import StepCreate, WorkflowCreate
+
+# ---------------------------------------------------------------------------
+# Test database engine and session factory
+# ---------------------------------------------------------------------------
+# Allows overriding via TEST_DATABASE_URL if a dedicated PostgreSQL instance
+# is available. Defaults to an isolated in-memory SQLite database so that
+# the workflow API tests run cleanly and hermetically without requiring a
+# local PostgreSQL server.
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
+
+if TEST_DATABASE_URL.startswith("sqlite"):
+    test_engine = create_engine(
+        TEST_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+else:
+    test_engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+
+Base.metadata.create_all(bind=test_engine)
+
+TestingSessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=test_engine,
+)
+
+
+def override_get_db() -> Generator[Session, None, None]:
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@pytest.fixture(autouse=True)
+def setup_test_db() -> Generator[None, None, None]:
+    """
+    Ensure the FastAPI application uses the test database for all endpoints
+    during workflow test runs.
+    """
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.pop(get_db, None)
+
 
 client = TestClient(app)
 
@@ -22,15 +72,15 @@ client = TestClient(app)
 # FIXTURE: Clean database session that tracks and cleans up created test rows
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def test_db() -> Generator[SessionLocal, None, None]:
+def test_db() -> Generator[Tuple[Session, List[uuid.UUID]], None, None]:
     """
-    Provides a real database session to test live PostgreSQL persistence.
+    Provides a clean database session for test execution.
     Tracks any WorkflowInstance IDs created during the test and deletes only
     those specific rows in teardown (cascading to steps).
     Does not drop tables or truncate foreign databases.
     """
-    db = SessionLocal()
-    created_workflow_ids = []
+    db = TestingSessionLocal()
+    created_workflow_ids: List[uuid.UUID] = []
 
     yield db, created_workflow_ids
 

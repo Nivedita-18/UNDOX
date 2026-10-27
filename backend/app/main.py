@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from backend.app.api.workflows import router as workflows_router
+from backend.app.api.executions import router as executions_router
 from backend.app.database import get_db
 
 app = FastAPI(
@@ -17,6 +18,7 @@ app = FastAPI(
 
 # Register routers
 app.include_router(workflows_router)
+app.include_router(executions_router)
 
 
 @app.get("/health")

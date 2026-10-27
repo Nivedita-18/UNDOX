@@ -9,6 +9,13 @@ from backend.app.schemas.workflow import (
     WorkflowListResponse,
     WorkflowResponse,
 )
+from backend.app.schemas.execution import (
+    ExecutionRequest,
+    ExecutionResponse,
+    ExecutionStepResponse,
+    ExecutionSummaryResponse,
+    FailureSimulationConfig,
+)
 
 __all__ = [
     "StepCreate",
@@ -16,4 +23,9 @@ __all__ = [
     "WorkflowCreate",
     "WorkflowResponse",
     "WorkflowListResponse",
+    "ExecutionRequest",
+    "ExecutionResponse",
+    "ExecutionStepResponse",
+    "ExecutionSummaryResponse",
+    "FailureSimulationConfig",
 ]

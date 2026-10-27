@@ -5,7 +5,7 @@ Uses SQLAlchemy 2.0 style declarative mappings and UUID primary keys.
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
@@ -78,13 +78,15 @@ class WorkflowInstance(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         server_default=func.now(),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         server_default=func.now(),
-        onupdate=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
 
@@ -143,13 +145,15 @@ class WorkflowStep(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         server_default=func.now(),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
         server_default=func.now(),
-        onupdate=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
     error_message: Mapped[Optional[str]] = mapped_column(
