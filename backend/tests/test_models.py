@@ -19,17 +19,37 @@ from backend.app.models.workflow import (
     WorkflowStatus,
     WorkflowStep,
 )
+from backend.app.models.recovery import (
+    RecoveryActionStatus,
+    RecoveryActionType,
+    RecoveryPlan,
+    RecoveryPlanAction,
+    RecoveryPlanStatus,
+)
+from backend.app.models.audit import (
+    AuditEvent,
+    AuditEventType,
+    AuditOutcome,
+)
+from backend.app.models.user import (
+    User,
+    UserRole,
+)
 
 
 def test_models_registered_in_metadata():
     """
-    Ensure all four core models are registered in Base.metadata.
+    Ensure all core models (workflow, execution, recovery, audit, user) are registered in Base.metadata.
     """
     table_names = Base.metadata.tables.keys()
     assert "workflow_instances" in table_names
     assert "workflow_steps" in table_names
     assert "workflow_executions" in table_names
     assert "execution_steps" in table_names
+    assert "recovery_plans" in table_names
+    assert "recovery_plan_actions" in table_names
+    assert "audit_events" in table_names
+    assert "users" in table_names
 
 
 def test_workflow_instance_table_structure():
@@ -178,6 +198,49 @@ def test_enum_status_values():
     assert ExecutionStepStatus.FAILED.value == "FAILED"
     assert ExecutionStepStatus.SKIPPED.value == "SKIPPED"
 
+    # RecoveryPlanStatus
+    assert RecoveryPlanStatus.DRAFT.value == "DRAFT"
+    assert RecoveryPlanStatus.GENERATED.value == "GENERATED"
+    assert RecoveryPlanStatus.PENDING.value == "PENDING"
+    assert RecoveryPlanStatus.APPROVED.value == "APPROVED"
+    assert RecoveryPlanStatus.REJECTED.value == "REJECTED"
+    assert RecoveryPlanStatus.EXECUTING.value == "EXECUTING"
+    assert RecoveryPlanStatus.COMPLETED.value == "COMPLETED"
+    assert RecoveryPlanStatus.FAILED.value == "FAILED"
+
+    # RecoveryActionStatus
+    assert RecoveryActionStatus.PROPOSED.value == "PROPOSED"
+    assert RecoveryActionStatus.REQUIRES_MANUAL_REVIEW.value == "REQUIRES_MANUAL_REVIEW"
+    assert RecoveryActionStatus.EXECUTING.value == "EXECUTING"
+    assert RecoveryActionStatus.COMPLETED.value == "COMPLETED"
+    assert RecoveryActionStatus.FAILED.value == "FAILED"
+    assert RecoveryActionStatus.SKIPPED.value == "SKIPPED"
+
+    # AuditEventType
+    assert AuditEventType.WORKFLOW_EXECUTION_STARTED.value == "WORKFLOW_EXECUTION_STARTED"
+    assert AuditEventType.WORKFLOW_EXECUTION_COMPLETED.value == "WORKFLOW_EXECUTION_COMPLETED"
+    assert AuditEventType.WORKFLOW_EXECUTION_FAILED.value == "WORKFLOW_EXECUTION_FAILED"
+    assert AuditEventType.RECOVERY_PLAN_CREATED.value == "RECOVERY_PLAN_CREATED"
+    assert AuditEventType.RECOVERY_PLAN_APPROVED.value == "RECOVERY_PLAN_APPROVED"
+    assert AuditEventType.RECOVERY_PLAN_REJECTED.value == "RECOVERY_PLAN_REJECTED"
+    assert AuditEventType.RECOVERY_EXECUTION_STARTED.value == "RECOVERY_EXECUTION_STARTED"
+    assert AuditEventType.RECOVERY_EXECUTION_COMPLETED.value == "RECOVERY_EXECUTION_COMPLETED"
+    assert AuditEventType.RECOVERY_EXECUTION_FAILED.value == "RECOVERY_EXECUTION_FAILED"
+
+    # AuditOutcome
+    assert AuditOutcome.SUCCESS.value == "SUCCESS"
+    assert AuditOutcome.FAILED.value == "FAILED"
+    assert AuditOutcome.STARTED.value == "STARTED"
+    assert AuditOutcome.APPROVED.value == "APPROVED"
+    assert AuditOutcome.REJECTED.value == "REJECTED"
+    assert AuditOutcome.WARNING.value == "WARNING"
+    assert AuditOutcome.INFO.value == "INFO"
+
+    # UserRole
+    assert UserRole.ADMIN.value == "ADMIN"
+    assert UserRole.OPERATOR.value == "OPERATOR"
+    assert UserRole.VIEWER.value == "VIEWER"
+
 
 def test_in_memory_model_relationship_navigation():
     """
@@ -230,3 +293,107 @@ def test_in_memory_model_relationship_navigation():
     assert exec_step.execution is execution
     assert exec_step.workflow_step is wf_step
     assert execution.workflow is workflow
+
+
+def test_recovery_plan_table_structure():
+    """
+    Validate the columns, foreign keys, and indexes of recovery_plans table.
+    """
+    table = Base.metadata.tables["recovery_plans"]
+
+    # Primary key
+    assert table.c.id.primary_key is True
+
+    # Required fields
+    assert table.c.execution_id.nullable is False
+    assert table.c.workflow_id.nullable is False
+    assert table.c.status.nullable is False
+    assert table.c.strategy.nullable is False
+    assert table.c.summary.nullable is False
+    assert table.c.requires_manual_approval.nullable is False
+
+    # Foreign keys
+    fk_targets = {fk.target_fullname for fk in table.foreign_keys}
+    assert "workflow_executions.id" in fk_targets
+    assert "workflow_instances.id" in fk_targets
+
+
+def test_recovery_plan_action_table_structure():
+    """
+    Validate the columns, constraints, and foreign keys of recovery_plan_actions table.
+    """
+    table = Base.metadata.tables["recovery_plan_actions"]
+
+    # Primary key
+    assert table.c.id.primary_key is True
+
+    # Required fields
+    assert table.c.plan_id.nullable is False
+    assert table.c.action_order.nullable is False
+    assert table.c.target_step_order.nullable is False
+    assert table.c.action_type.nullable is False
+    assert table.c.target_step_name.nullable is False
+    assert table.c.status.nullable is False
+    assert table.c.is_reversible.nullable is False
+    assert table.c.explanation.nullable is False
+
+    # Foreign keys
+    fk_targets = {fk.target_fullname for fk in table.foreign_keys}
+    assert "recovery_plans.id" in fk_targets
+    assert "execution_steps.id" in fk_targets
+
+    # Check constraints and unique constraints
+    ck_names = [c.name for c in table.constraints if hasattr(c, "name") and c.name]
+    assert "ck_recovery_plan_action_order_positive" in ck_names
+    assert "ck_recovery_plan_target_step_order_positive" in ck_names
+    assert "uq_recovery_plan_action_order" in ck_names
+
+
+def test_audit_event_table_structure():
+    """
+    Validate the columns, indexes, and foreign keys of audit_events table.
+    """
+    table = Base.metadata.tables["audit_events"]
+
+    # Primary key
+    assert table.c.id.primary_key is True
+
+    # Required fields
+    assert table.c.event_type.nullable is False
+    assert table.c.timestamp.nullable is False
+    assert table.c.outcome.nullable is False
+    assert table.c.message.nullable is False
+    assert table.c.created_at.nullable is False
+
+    # Optional fields
+    assert table.c.execution_id.nullable is True
+    assert table.c.recovery_plan_id.nullable is True
+    assert table.c.actor.nullable is True
+    assert table.c.details.nullable is True
+
+    # Foreign keys
+    fk_targets = {fk.target_fullname for fk in table.foreign_keys}
+    assert "workflow_executions.id" in fk_targets
+    assert "recovery_plans.id" in fk_targets
+
+
+def test_user_table_structure():
+    """
+    Validate the columns and constraints of users table.
+    """
+    table = Base.metadata.tables["users"]
+
+    # Primary key
+    assert table.c.id.primary_key is True
+
+    # Required fields
+    assert table.c.username.nullable is False
+    assert table.c.email.nullable is False
+    assert table.c.hashed_password.nullable is False
+    assert table.c.role.nullable is False
+    assert table.c.is_active.nullable is False
+    assert table.c.created_at.nullable is False
+    assert table.c.updated_at.nullable is False
+
+
+

@@ -7,7 +7,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from backend.app.auth.dependencies import get_current_user, require_role
 from backend.app.database import get_db
+from backend.app.models.user import User, UserRole
 from backend.app.schemas.workflow import (
     WorkflowCreate,
     WorkflowListResponse,
@@ -33,6 +35,7 @@ router = APIRouter(
 )
 def register_workflow(
     payload: WorkflowCreate,
+    current_user: User = Depends(require_role(UserRole.OPERATOR, UserRole.ADMIN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -52,6 +55,7 @@ def register_workflow(
 )
 def get_workflow(
     workflow_id: UUID,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -86,6 +90,7 @@ def get_workflows(
         ge=0,
         description="Number of workflows to skip for pagination",
     ),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """

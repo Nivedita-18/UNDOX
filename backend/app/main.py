@@ -8,7 +8,12 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from backend.app.api.workflows import router as workflows_router
 from backend.app.api.executions import router as executions_router
+from backend.app.api.recovery import router as recovery_router
+from backend.app.api.audit import router as audit_router
+from backend.app.api.auth import router as auth_router
 from backend.app.database import get_db
+
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="UNDOX API",
@@ -16,9 +21,22 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Enable CORS for frontend dashboard
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Register routers
 app.include_router(workflows_router)
 app.include_router(executions_router)
+app.include_router(recovery_router)
+app.include_router(audit_router)
+app.include_router(auth_router)
+app.include_router(auth_router, prefix="/api/v1")
 
 
 @app.get("/health")

@@ -28,6 +28,8 @@ from backend.app.models.workflow import (
     WorkflowStep,
     WorkflowStatus,
 )
+from backend.app.audit.service import record_audit_event
+from backend.app.models.audit import AuditEventType, AuditOutcome
 from backend.app.schemas.execution import ExecutionRequest
 
 
@@ -250,6 +252,17 @@ def _run_execution(
         db.rollback()
         raise
 
+    # Audit event: execution started
+    record_audit_event(
+        db=db,
+        event_type=AuditEventType.WORKFLOW_EXECUTION_STARTED,
+        outcome=AuditOutcome.STARTED,
+        message=f"Workflow execution started for workflow '{execution.workflow_id}' (attempt {execution.attempt_number}).",
+        execution_id=execution.id,
+        actor="system",
+        details={"attempt": execution.attempt_number, "workflow_id": str(execution.workflow_id)},
+    )
+
     # --- Execute steps sequentially ---
     # Re-load execution steps ordered by step_order
     steps_stmt = (
@@ -328,6 +341,28 @@ def _run_execution(
     except Exception:
         db.rollback()
         raise
+
+    # Audit event: execution outcome
+    if failure_occurred:
+        record_audit_event(
+            db=db,
+            event_type=AuditEventType.WORKFLOW_EXECUTION_FAILED,
+            outcome=AuditOutcome.FAILED,
+            message=execution.failure_reason or "Workflow execution failed.",
+            execution_id=execution.id,
+            actor="system",
+            details={"failed_step_order": fail_at, "error": fail_msg},
+        )
+    else:
+        record_audit_event(
+            db=db,
+            event_type=AuditEventType.WORKFLOW_EXECUTION_COMPLETED,
+            outcome=AuditOutcome.SUCCESS,
+            message=f"Workflow execution completed successfully for workflow '{execution.workflow_id}'.",
+            execution_id=execution.id,
+            actor="system",
+            details={"step_count": len(exec_steps)},
+        )
 
     return execution
 

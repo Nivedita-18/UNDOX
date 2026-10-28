@@ -23,5 +23,14 @@ class Settings:
         "postgresql+psycopg2://localhost:5432/undox_dev",
     )
 
+    # Security & Authentication
+    SECRET_KEY: str = os.getenv(
+        "SECRET_KEY",
+        "undox-super-secret-key-change-in-production-2026",
+    )
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    AUTH_ENFORCED: bool = os.getenv("UNDOX_AUTH_ENFORCED", "false").lower() in ("true", "1", "yes")
+
 
 settings = Settings()

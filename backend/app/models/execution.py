@@ -24,6 +24,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.database import Base
 
 if TYPE_CHECKING:
+    from backend.app.models.audit import AuditEvent
+    from backend.app.models.recovery import RecoveryPlan
     from backend.app.models.workflow import WorkflowInstance, WorkflowStep
 
 
@@ -136,6 +138,21 @@ class WorkflowExecution(Base):
         back_populates="execution",
         cascade="all, delete-orphan",
         order_by="ExecutionStep.step_order",
+    )
+
+    # Generated recovery plans for this execution
+    recovery_plans: Mapped[List["RecoveryPlan"]] = relationship(
+        back_populates="execution",
+        cascade="all, delete-orphan",
+        order_by="RecoveryPlan.created_at.desc()",
+    )
+
+    # Immutable audit events related to this execution
+    audit_events: Mapped[List["AuditEvent"]] = relationship(
+        "AuditEvent",
+        back_populates="execution",
+        order_by="AuditEvent.timestamp.asc()",
+        foreign_keys="AuditEvent.execution_id",
     )
 
     def __repr__(self) -> str:

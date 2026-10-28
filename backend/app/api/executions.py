@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from backend.app.auth.dependencies import get_current_user, require_role
 from backend.app.database import get_db
 from backend.app.executions.service import (
     ActiveExecutionConflictError,
@@ -16,6 +17,7 @@ from backend.app.executions.service import (
     execute_workflow,
     get_execution_by_id,
 )
+from backend.app.models.user import User, UserRole
 from backend.app.schemas.execution import (
     ExecutionRequest,
     ExecutionResponse,
@@ -35,6 +37,7 @@ router = APIRouter(
 def trigger_workflow_execution(
     workflow_id: UUID,
     payload: Optional[ExecutionRequest] = None,
+    current_user: User = Depends(require_role(UserRole.OPERATOR, UserRole.ADMIN)),
     db: Session = Depends(get_db),
 ):
     """
@@ -76,6 +79,7 @@ def trigger_workflow_execution(
 )
 def get_execution(
     execution_id: UUID,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """

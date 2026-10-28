@@ -10,6 +10,22 @@ from backend.app.models.execution import (
     ExecutionStepStatus,
     WorkflowExecution,
 )
+from backend.app.models.recovery import (
+    RecoveryActionStatus,
+    RecoveryActionType,
+    RecoveryPlan,
+    RecoveryPlanAction,
+    RecoveryPlanStatus,
+)
+from backend.app.models.audit import (
+    AuditEvent,
+    AuditEventType,
+    AuditOutcome,
+)
+from backend.app.models.user import (
+    User,
+    UserRole,
+)
 from backend.app.models.workflow import (
     StepStatus,
     WorkflowInstance,
@@ -27,4 +43,14 @@ __all__ = [
     "ExecutionStep",
     "ExecutionStatus",
     "ExecutionStepStatus",
+    "RecoveryPlan",
+    "RecoveryPlanAction",
+    "RecoveryPlanStatus",
+    "RecoveryActionType",
+    "RecoveryActionStatus",
+    "AuditEvent",
+    "AuditEventType",
+    "AuditOutcome",
+    "User",
+    "UserRole",
 ]
