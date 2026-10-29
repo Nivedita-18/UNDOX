@@ -23,7 +23,10 @@ import backend.app.models  # noqa: F401
 config = context.config
 
 # Dynamically set the SQLAlchemy URL from our centralized application settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+config.set_main_option(
+    "sqlalchemy.url",
+    settings.DATABASE_URL.replace("%", "%%"),
+)
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:
