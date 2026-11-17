@@ -1,118 +1,159 @@
-"""
-User Authentication and Management Service for UNDOX.
-
-Handles:
-- User registration with unique username and email validation.
-- Secure credential authentication.
-- Retrieval of user records.
-"""
-
-from typing import Optional
-from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
-from backend.app.auth.security import hash_password, verify_password
-from backend.app.models.user import User, UserRole
-from backend.app.schemas.auth import UserRegisterRequest
+from ..models import User
+from ..audit.service import record_audit_event
+
+from .security import (
+    hash_password,
+    verify_password
+)
 
 
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
-
-class AuthError(Exception):
-    """Base exception for authentication service errors."""
+class UserAlreadyExistsError(Exception):
     pass
 
 
-class UserAlreadyExistsError(AuthError):
-    """Raised when registering a username or email that already exists."""
+class InvalidCredentialsError(Exception):
     pass
 
 
-class InvalidCredentialsError(AuthError):
-    """Raised when authentication credentials do not match."""
-    pass
+# Register a new user
+def register_user(
+    db: Session,
+    email: str,
+    password: str
+):
 
+    email = email.strip().lower()
 
-class InactiveUserError(AuthError):
-    """Raised when an inactive user attempts to authenticate."""
-    pass
-
-
-# ---------------------------------------------------------------------------
-# Public Service API
-# ---------------------------------------------------------------------------
-
-def get_user_by_id(db: Session, user_id: UUID) -> Optional[User]:
-    """Retrieves a user by primary key UUID."""
-    stmt = select(User).where(User.id == user_id)
-    return db.execute(stmt).scalar_one_or_none()
-
-
-def get_user_by_username(db: Session, username: str) -> Optional[User]:
-    """Retrieves a user by unique username."""
-    stmt = select(User).where(User.username == username)
-    return db.execute(stmt).scalar_one_or_none()
-
-
-def get_user_by_email(db: Session, email: str) -> Optional[User]:
-    """Retrieves a user by unique email."""
-    stmt = select(User).where(User.email == email)
-    return db.execute(stmt).scalar_one_or_none()
-
-
-def register_user(db: Session, request: UserRegisterRequest) -> User:
-    """
-    Registers a new user account with hashed password and assigned role.
-    Raises UserAlreadyExistsError if username or email is already registered.
-    """
-    # Check duplicate username
-    if get_user_by_username(db, request.username):
-        raise UserAlreadyExistsError(f"Username '{request.username}' is already registered.")
-
-    # Check duplicate email
-    if get_user_by_email(db, request.email):
-        raise UserAlreadyExistsError(f"Email '{request.email}' is already registered.")
-
-    role_val = request.role.value if request.role else UserRole.VIEWER.value
-    user = User(
-        username=request.username,
-        email=request.email,
-        hashed_password=hash_password(request.password),
-        role=role_val,
-        is_active=True,
+    existing_user = db.scalar(
+        select(User).where(User.email == email)
     )
 
-    db.add(user)
+    if existing_user:
+        raise UserAlreadyExistsError(
+            "An account with this email already exists."
+        )
+
     try:
+
+        # Create user with hashed password
+        user = User(
+            email=email,
+            password_hash=hash_password(password),
+            role="VIEWER",
+            is_active=True
+        )
+
+        db.add(user)
+        db.flush()
+
+        # Record registration event
+        record_audit_event(
+            db,
+            event_type="USER_REGISTERED",
+            outcome="SUCCESS",
+            message="New user registered successfully",
+            actor_id=user.id,
+            event_data={
+                "email": email
+            }
+        )
+
         db.commit()
         db.refresh(user)
+
         return user
+
+    except IntegrityError:
+
+        db.rollback()
+
+        # Handle duplicate email registration race condition
+        existing_user = db.scalar(
+            select(User).where(User.email == email)
+        )
+
+        if existing_user:
+            raise UserAlreadyExistsError(
+                "An account with this email already exists."
+            )
+
+        raise
+
     except Exception:
+
         db.rollback()
         raise
 
 
+# Authenticate an existing user
 def authenticate_user(
     db: Session,
-    username: str,
-    password: str,
-) -> User:
-    """
-    Validates user credentials. Returns the User record upon success.
-    Raises InvalidCredentialsError or InactiveUserError on failure.
-    """
-    user = get_user_by_username(db, username)
-    if user is None:
-        raise InvalidCredentialsError("Invalid username or password.")
+    email: str,
+    password: str
+):
 
-    if not verify_password(password, user.hashed_password):
-        raise InvalidCredentialsError("Invalid username or password.")
+    email = email.strip().lower()
 
-    if not user.is_active:
-        raise InactiveUserError(f"User account '{username}' is disabled.")
+    user = db.scalar(
+        select(User).where(User.email == email)
+    )
 
-    return user
+    # Verify password only when user exists
+    password_valid = (
+        verify_password(password, user.password_hash)
+        if user is not None
+        else False
+    )
+
+    # Reject invalid credentials or inactive accounts
+    if user is None or not password_valid or not user.is_active:
+
+        try:
+
+            record_audit_event(
+                db,
+                event_type="AUTH_LOGIN_FAILED",
+                outcome="DENIED",
+                message="Invalid login credentials",
+                actor_id=user.id if user else None,
+                event_data={
+                    "email": email
+                }
+            )
+
+            db.commit()
+
+        except Exception:
+            db.rollback()
+            raise
+
+        raise InvalidCredentialsError(
+            "Incorrect email or password."
+        )
+
+    try:
+
+        # Record successful login
+        record_audit_event(
+            db,
+            event_type="USER_LOGIN",
+            outcome="SUCCESS",
+            message="User logged in successfully",
+            actor_id=user.id,
+            event_data={
+                "email": user.email
+            }
+        )
+
+        db.commit()
+
+        return user
+
+    except Exception:
+        db.rollback()
+        raise

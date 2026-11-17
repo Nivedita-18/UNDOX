@@ -1,87 +1,84 @@
-"""
-User and UserRole SQLAlchemy ORM models for UNDOX.
-Provides persistent user accounts for authentication and role-based access control (RBAC).
-"""
 
-import enum
-import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
-    String,
-    func,
+    Integer,
+    String
 )
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.app.database import Base
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship
+)
 
-
-class UserRole(str, enum.Enum):
-    """
-    Role-based authorization levels in UNDOX:
-    - ADMIN: Full administrative rights across all resources.
-    - OPERATOR: Can trigger workflows, approve/reject recovery plans, execute recovery.
-    - VIEWER: Read-only access to workflows, executions, recovery plans, and audit logs.
-    """
-    ADMIN = "ADMIN"
-    OPERATOR = "OPERATOR"
-    VIEWER = "VIEWER"
+from ..database import Base
 
 
 class User(Base):
-    """
-    User model storing credentials and role-based authorization attributes.
-    Passwords are never stored in plaintext; strictly hashed via PBKDF2-HMAC-SHA256.
-    """
+
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('ADMIN', 'OPERATOR', 'VIEWER')",
+            name="ck_users_role"
+        ),
+    )
+
+    # Primary Key
+    id: Mapped[int] = mapped_column(
+        Integer,
         primary_key=True,
-        default=uuid.uuid4,
+        index=True
     )
-    username: Mapped[str] = mapped_column(
-        String(64),
-        unique=True,
-        index=True,
-        nullable=False,
-    )
+
+    # User email
     email: Mapped[str] = mapped_column(
         String(255),
         unique=True,
         index=True,
-        nullable=False,
+        nullable=False
     )
-    hashed_password: Mapped[str] = mapped_column(
+
+    # Securely hashed password
+    password_hash: Mapped[str] = mapped_column(
         String(255),
-        nullable=False,
+        nullable=False
     )
+
+    # User role
     role: Mapped[str] = mapped_column(
-        String(32),
-        nullable=False,
-        default=UserRole.VIEWER.value,
+        String(20),
+        default="VIEWER",
+        nullable=False
     )
+
+    # Account status
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
-        nullable=False,
+        nullable=False
     )
+
+    # Account creation timestamp
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        server_default=func.now(),
-        onupdate=lambda: datetime.now(timezone.utc),
-        nullable=False,
+        nullable=False
     )
 
-    def __repr__(self) -> str:
-        return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
+    # Relationship with audit events
+    audit_events: Mapped[list["AuditEvent"]] = relationship(
+        back_populates="actor"
+    )
+
+    def __repr__(self):
+        return (
+            f"<User id={self.id} "
+            f"email={self.email!r} "
+            f"role={self.role}>"
+        )

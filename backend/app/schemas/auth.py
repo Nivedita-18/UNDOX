@@ -1,58 +1,60 @@
-"""
-Pydantic schemas for Authentication and Authorization DTOs in UNDOX.
-Uses Pydantic v2 conventions.
-"""
 
 from datetime import datetime
-from enum import Enum
-from typing import Optional
-from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class UserRole(str, Enum):
-    """Supported authorization roles."""
-    ADMIN = "ADMIN"
-    OPERATOR = "OPERATOR"
-    VIEWER = "VIEWER"
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field
+)
 
 
-class UserRegisterRequest(BaseModel):
-    """Payload to register a new user account."""
-    username: str = Field(..., min_length=3, max_length=64, description="Unique username")
+# User registration request
+class UserRegister(BaseModel):
+
     email: str = Field(
-        ...,
-        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
-        description="Valid unique email address",
+        min_length=5,
+        max_length=255,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
     )
-    password: str = Field(..., min_length=8, max_length=128, description="Password (min 8 chars)")
-    role: Optional[UserRole] = Field(default=UserRole.VIEWER, description="Assigned role")
+
+    password: str = Field(
+        min_length=8,
+        max_length=128
+    )
 
 
-class UserLoginRequest(BaseModel):
-    """Payload to authenticate with username and password."""
-    username: str = Field(..., description="User's username")
-    password: str = Field(..., description="User's password")
+# User login request
+class LoginRequest(BaseModel):
+
+    email: str = Field(
+        min_length=5,
+        max_length=255,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+    )
+
+    password: str = Field(
+        min_length=1,
+        max_length=128
+    )
 
 
-class TokenResponse(BaseModel):
-    """Response containing JWT access token."""
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int = Field(..., description="Token expiry duration in seconds")
-    user_id: UUID
-    username: str
-    role: str
+# User profile response
+class UserRead(BaseModel):
 
+    model_config = ConfigDict(
+        from_attributes=True
+    )
 
-class UserResponse(BaseModel):
-    """User profile response."""
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    username: str
+    id: int
     email: str
     role: str
     is_active: bool
     created_at: datetime
+
+
+# JWT access token response
+class TokenResponse(BaseModel):
+
+    access_token: str
+
+    token_type: str = "bearer"

@@ -1,98 +1,147 @@
-"""
-REST API router for workflow execution and inspection.
-"""
 
-from typing import Optional
-from uuid import UUID
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    status
+)
 
-from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.app.auth.dependencies import get_current_user, require_role
-from backend.app.database import get_db
-from backend.app.executions.service import (
-    ActiveExecutionConflictError,
-    InvalidFailureConfigError,
-    WorkflowNotFoundError,
-    execute_workflow,
-    get_execution_by_id,
-)
-from backend.app.models.user import User, UserRole
-from backend.app.schemas.execution import (
+from ..database import get_db
+
+from ..schemas.execution import (
     ExecutionRequest,
-    ExecutionResponse,
+    ExecutionRead
 )
+
+from ..executions import service
+
+from ..auth.dependencies import (
+    get_current_user,
+    require_roles
+)
+
 
 router = APIRouter(
-    tags=["Executions"],
+    tags=["Executions"]
 )
 
 
+# Execute workflow - ADMIN and OPERATOR only
 @router.post(
     "/workflows/{workflow_id}/execute",
-    response_model=ExecutionResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Trigger execution of a workflow instance",
+    response_model=ExecutionRead,
+    status_code=status.HTTP_201_CREATED
 )
-def trigger_workflow_execution(
-    workflow_id: UUID,
-    payload: Optional[ExecutionRequest] = None,
-    current_user: User = Depends(require_role(UserRole.OPERATOR, UserRole.ADMIN)),
-    db: Session = Depends(get_db),
+def execute_workflow(
+    workflow_id: int,
+    request: ExecutionRequest,
+    current_user=Depends(
+        require_roles("ADMIN", "OPERATOR")
+    ),
+    db: Session = Depends(get_db)
 ):
-    """
-    Triggers execution of an existing workflow instance.
-    Optionally accepts a failure simulation configuration to test error handling
-    and failure recovery without real external outages.
 
-    - Returns 201 with full execution state and step records.
-    - Returns 404 if the workflow does not exist.
-    - Returns 400 if the failure simulation targets a nonexistent step.
-    - Returns 409 if an execution is already PENDING or RUNNING for this workflow.
-    """
-    request_data = payload if payload is not None else ExecutionRequest()
     try:
-        execution = execute_workflow(db, workflow_id, request_data)
-        return execution
-    except WorkflowNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
+
+        return service.execute_workflow(
+            db=db,
+            workflow_id=workflow_id,
+            simulate_failure=request.simulate_failure,
+            failure_step_order=request.failure_step_order,
+            failure_message=request.failure_message,
+            triggered_by=current_user.id
         )
-    except InvalidFailureConfigError as exc:
+
+    except service.WorkflowNotFoundError:
+
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+            status_code=404,
+            detail="Workflow not found"
         )
-    except ActiveExecutionConflictError as exc:
+
+    except service.InactiveWorkflowError:
+
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
+            status_code=409,
+            detail="Workflow is not active"
+        )
+
+    except service.ExecutionConflictError:
+
+        raise HTTPException(
+            status_code=409,
+            detail="An execution is already running"
+        )
+
+    except service.InvalidFailureStepError as error:
+
+        raise HTTPException(
+            status_code=422,
+            detail=str(error)
+        )
+
+    except ValueError as error:
+
+        raise HTTPException(
+            status_code=422,
+            detail=str(error)
         )
 
 
+# Get individual execution - authenticated users
 @router.get(
     "/executions/{execution_id}",
-    response_model=ExecutionResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Retrieve execution details by ID",
+    response_model=ExecutionRead
 )
 def get_execution(
-    execution_id: UUID,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    execution_id: int,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """
-    Retrieves the execution details and runtime step statuses for a specific
-    WorkflowExecution attempt.
 
-    - Returns 200 with full execution details and step states.
-    - Returns 404 if no execution exists with the given ID.
-    """
-    execution = get_execution_by_id(db, execution_id)
-    if not execution:
+    execution = service.get_execution(
+        db,
+        execution_id
+    )
+
+    if execution is None:
+
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Execution with ID '{execution_id}' not found.",
+            status_code=404,
+            detail="Execution not found"
         )
+
     return execution
+
+
+# List workflow executions - authenticated users
+@router.get(
+    "/workflows/{workflow_id}/executions",
+    response_model=list[ExecutionRead]
+)
+def list_executions(
+    workflow_id: int,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
+    executions = service.list_workflow_executions(
+        db,
+        workflow_id,
+        limit,
+        offset
+    )
+
+    if executions is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Workflow not found"
+        )
+
+    return executions

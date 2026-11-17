@@ -1,125 +1,138 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { api } from '../api/client';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  getCurrentUser,
+  loginUser,
+  registerUser,
+  logoutUser as clearSession,
+} from "../api/auth";
+
+import { getAccessToken } from "../api/client";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('undox_token') || null);
-  const [user, setUser] = useState(() => {
-    try {
-      const stored = localStorage.getItem('undox_user');
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem('undox_token');
-    localStorage.removeItem('undox_user');
-    setToken(null);
-    setUser(null);
-  }, []);
-
-  // Fetch current user details on load if token exists
+  // Restore an existing session after page refresh
   useEffect(() => {
-    let isMounted = true;
-    async function loadUser() {
-      if (!token) {
-        setIsLoading(false);
+    let active = true;
+
+    async function restoreSession() {
+      if (!getAccessToken()) {
+        if (active) {
+          setUser(null);
+          setLoading(false);
+        }
         return;
       }
 
       try {
-        const userData = await api.auth.getMe();
-        if (isMounted) {
-          setUser(userData);
-          localStorage.setItem('undox_user', JSON.stringify(userData));
+        const currentUser = await getCurrentUser();
+
+        if (active) {
+          setUser(currentUser);
         }
-      } catch (err) {
-        console.warn('Failed to validate stored token, logging out', err);
-        if (isMounted) {
-          logout();
+      } catch {
+        clearSession();
+
+        if (active) {
+          setUser(null);
         }
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
+        if (active) {
+          setLoading(false);
         }
       }
     }
 
-    loadUser();
+    restoreSession();
 
-    const handleUnauthorized = () => {
-      logout();
-    };
-
-    window.addEventListener('undox:unauthorized', handleUnauthorized);
     return () => {
-      isMounted = false;
-      window.removeEventListener('undox:unauthorized', handleUnauthorized);
+      active = false;
     };
-  }, [token, logout]);
+  }, []);
 
-  const login = async (username, password) => {
-    setIsLoading(true);
+  // Login
+  const login = useCallback(async (credentials) => {
+    await loginUser(credentials);
+
     try {
-      const data = await api.auth.login(username, password);
-      localStorage.setItem('undox_token', data.access_token);
-      const userProfile = {
-        id: data.user_id,
-        username: data.username,
-        role: data.role,
-      };
-      localStorage.setItem('undox_user', JSON.stringify(userProfile));
-      setToken(data.access_token);
-      setUser(userProfile);
-      return userProfile;
-    } finally {
-      setIsLoading(false);
+      const currentUser = await getCurrentUser();
+      setUser(currentUser);
+      return currentUser;
+    } catch (error) {
+      clearSession();
+      setUser(null);
+      throw error;
     }
-  };
+  }, []);
 
-  const register = async (username, email, password, role = 'VIEWER') => {
-    setIsLoading(true);
+  // Registration
+  const register = useCallback(async (userData) => {
+    return registerUser(userData);
+  }, []);
+
+  // Refresh current user information
+  const refreshUser = useCallback(async () => {
+    if (!getAccessToken()) {
+      setUser(null);
+      return null;
+    }
+
     try {
-      await api.auth.register(username, email, password, role);
-      // Automatically log in after registration
-      return await login(username, password);
-    } finally {
-      setIsLoading(false);
+      const currentUser = await getCurrentUser();
+      setUser(currentUser);
+      return currentUser;
+    } catch (error) {
+      clearSession();
+      setUser(null);
+      throw error;
     }
-  };
+  }, []);
 
-  const isAdmin = user?.role === 'ADMIN';
-  const isOperator = user?.role === 'OPERATOR' || isAdmin;
-  const isViewer = user?.role === 'VIEWER';
-  const canApprove = isOperator;
-  const canExecute = isOperator;
+  // Logout
+  const logout = useCallback(() => {
+    clearSession();
+    setUser(null);
+  }, []);
 
-  const value = {
-    user,
-    token,
-    isAuthenticated: !!token,
-    isLoading,
-    login,
-    register,
-    logout,
-    isAdmin,
-    isOperator,
-    isViewer,
-    canApprove,
-    canExecute,
-  };
+  const value = useMemo(
+    () => ({
+      user,
+      loading,
+      isAuthenticated: Boolean(user),
+      login,
+      register,
+      logout,
+      refreshUser,
+    }),
+    [user, loading, login, register, logout, refreshUser]
+  );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
+
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error(
+      "useAuth must be used inside AuthProvider."
+    );
   }
+
   return context;
 }

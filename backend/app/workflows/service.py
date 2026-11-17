@@ -1,90 +1,108 @@
-"""
-Workflow service containing business logic for creating and retrieving workflows.
-Handles database transactions and eager loading to prevent N+1 queries.
-"""
 
-from typing import List, Optional, Tuple
-from uuid import UUID
-
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.models.workflow import (
-    StepStatus,
-    WorkflowInstance,
-    WorkflowStatus,
-    WorkflowStep,
-)
-from backend.app.schemas.workflow import WorkflowCreate
+from ..models import WorkflowInstance, WorkflowStep
+from ..schemas.workflow import WorkflowCreate
+from ..audit.service import record_audit_event
 
 
-def create_workflow(db: Session, data: WorkflowCreate) -> WorkflowInstance:
-    """
-    Creates a new WorkflowInstance along with all its planned steps in a single transaction.
-    Rolls back automatically if an error occurs.
-    """
-    workflow = WorkflowInstance(
-        name=data.name,
-        status=WorkflowStatus.PENDING.value,
-    )
-
-    for step_data in data.steps:
-        step = WorkflowStep(
-            name=step_data.name,
-            step_order=step_data.step_order,
-            status=StepStatus.PENDING.value,
-        )
-        workflow.steps.append(step)
+# Create a new workflow
+def create_workflow(
+    db: Session,
+    workflow_data: WorkflowCreate,
+    created_by: int | None = None
+):
 
     try:
+        workflow = WorkflowInstance(
+            name=workflow_data.name,
+            description=workflow_data.description,
+            status="ACTIVE",
+            created_by=created_by
+        )
+
         db.add(workflow)
+        db.flush()
+
+        ordered_steps = sorted(
+            workflow_data.steps,
+            key=lambda step: step.step_order
+        )
+
+        for step_data in ordered_steps:
+
+            step = WorkflowStep(
+                workflow_id=workflow.id,
+                name=step_data.name,
+                step_order=step_data.step_order,
+                payload=step_data.payload,
+                compensation_payload=(
+                    step_data.compensation_payload
+                ),
+                is_reversible=step_data.is_reversible
+            )
+
+            db.add(step)
+
+        workflow_id = workflow.id
+
+        # Record audit event
+        record_audit_event(
+            db,
+            event_type="WORKFLOW_CREATED",
+            outcome="SUCCESS",
+            message="Workflow created successfully",
+            actor_id=created_by,
+            event_data={
+                "workflow_id": workflow_id,
+                "workflow_name": workflow.name
+            }
+        )
+
         db.commit()
-        db.refresh(workflow)
-        # Ensure steps are populated on the refreshed instance
-        for step in workflow.steps:
-            db.refresh(step)
-        return workflow
+
+        return get_workflow(db, workflow_id)
+
     except Exception:
         db.rollback()
         raise
 
 
-def get_workflow_by_id(db: Session, workflow_id: UUID) -> Optional[WorkflowInstance]:
-    """
-    Retrieves a single workflow by its UUID with steps eagerly loaded and ordered by step_order.
-    Avoids N+1 query overhead.
-    """
-    stmt = (
-        select(WorkflowInstance)
-        .options(selectinload(WorkflowInstance.steps))
-        .where(WorkflowInstance.id == workflow_id)
-    )
-    result = db.execute(stmt).scalar_one_or_none()
-    return result
-
-
+# Get all workflows with pagination
 def list_workflows(
     db: Session,
-    limit: int = 50,
-    offset: int = 0,
-) -> Tuple[List[WorkflowInstance], int]:
-    """
-    Lists recent workflows sorted by creation timestamp (newest first)
-    along with the total count of workflows.
-    Uses selectinload to eagerly fetch steps without N+1 query penalties.
-    """
-    # Total count query
-    total_stmt = select(func.count()).select_from(WorkflowInstance)
-    total = db.execute(total_stmt).scalar() or 0
+    limit: int = 20,
+    offset: int = 0
+):
 
-    # Paginated items query
-    items_stmt = (
+    statement = (
         select(WorkflowInstance)
-        .options(selectinload(WorkflowInstance.steps))
-        .order_by(WorkflowInstance.created_at.desc())
-        .offset(offset)
+        .options(
+            selectinload(WorkflowInstance.steps)
+        )
+        .order_by(WorkflowInstance.id.desc())
         .limit(limit)
+        .offset(offset)
     )
-    items = list(db.execute(items_stmt).scalars().all())
 
-    return items, total
+    return list(db.scalars(statement).all())
+
+
+# Get one workflow by ID
+def get_workflow(
+    db: Session,
+    workflow_id: int
+):
+
+    statement = (
+        select(WorkflowInstance)
+        .options(
+            selectinload(WorkflowInstance.steps)
+        )
+        .where(
+            WorkflowInstance.id == workflow_id
+        )
+    )
+
+    return db.scalar(statement)

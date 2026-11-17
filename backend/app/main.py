@@ -1,67 +1,94 @@
-"""
-UNDOX — Workflow Failure Recovery System
-Main FastAPI Application Entry Point
-"""
-
-from fastapi import Depends, FastAPI, HTTPException, status
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-from backend.app.api.workflows import router as workflows_router
-from backend.app.api.executions import router as executions_router
-from backend.app.api.recovery import router as recovery_router
-from backend.app.api.audit import router as audit_router
-from backend.app.api.auth import router as auth_router
-from backend.app.database import get_db
-
+import os
 from fastapi.middleware.cors import CORSMiddleware
 
+
+from fastapi import FastAPI, HTTPException
+
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+
+from .database import engine
+
+from .api.auth import router as auth_router
+from .api.workflows import router as workflows_router
+from .api.executions import router as executions_router
+from .api.recovery import router as recovery_router
+from .api.audit import router as audit_router
+
+
 app = FastAPI(
-    title="UNDOX API",
-    description="Workflow Failure Recovery System API",
-    version="0.1.0",
+    title="UNDOX - Workflow Failure Recovery System",
+    description=(
+        "Workflow management and failure "
+        "recovery platform"
+    ),
+    version="1.0.0"
 )
 
-# Enable CORS for frontend dashboard
+# CORS configuration for local and Azure-hosted frontend.
+_frontend_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv(
+        "FRONTEND_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register routers
+
+# Register all application routers
+app.include_router(auth_router)
 app.include_router(workflows_router)
 app.include_router(executions_router)
 app.include_router(recovery_router)
 app.include_router(audit_router)
-app.include_router(auth_router)
-app.include_router(auth_router, prefix="/api/v1")
 
 
+# Home endpoint
+@app.get("/")
+def home():
+
+    return {
+        "message": "Welcome to UNDOX",
+        "status": "Application is running"
+    }
+
+
+# Application health check
 @app.get("/health")
 def health_check():
-    """
-    Application health check endpoint.
-    Verifies that the API server is responding.
-    """
-    return {"status": "ok"}
+
+    return {
+        "status": "healthy",
+        "application": "UNDOX"
+    }
 
 
+# Database health check
 @app.get("/health/db")
-def health_db_check(db: Session = Depends(get_db)):
-    """
-    Database health check endpoint.
-    Executes a lightweight query (SELECT 1) to verify database connectivity.
-    Returns HTTP 503 if the database is unreachable without leaking credentials.
-    """
+def database_health():
+
     try:
-        result = db.execute(text("SELECT 1")).scalar()
-        if result != 1:
-            raise ValueError("Unexpected query result")
-        return {"status": "ok", "database": "connected"}
-    except Exception:
+
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "database_name": "undox_dev"
+        }
+
+    except SQLAlchemyError:
+
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection unavailable",
+            status_code=503,
+            detail="Database connection failed"
         )

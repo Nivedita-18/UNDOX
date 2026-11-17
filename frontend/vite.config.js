@@ -1,41 +1,42 @@
-import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
-// https://vite.dev/config/
+const backend = "http://127.0.0.1:8000";
+
 export default defineConfig({
   plugins: [react()],
+
   server: {
-    port: 5173,
     proxy: {
-      '/auth': {
-        target: 'http://localhost:8000',
+      "/auth": {
+        target: backend,
         changeOrigin: true,
       },
-      '/workflows': {
-        target: 'http://localhost:8000',
+
+      "/workflows": {
+        target: backend,
         changeOrigin: true,
       },
-      '/executions': {
-        target: 'http://localhost:8000',
+
+      "/executions": {
+        target: backend,
         changeOrigin: true,
       },
-      '/recovery-plans': {
-        target: 'http://localhost:8000',
+
+      "/recovery-plans": {
+        target: backend,
         changeOrigin: true,
       },
-      '/api/v1': {
-        target: 'http://localhost:8000',
+
+      "/api/v1": {
+        target: backend,
         changeOrigin: true,
       },
-      '/health': {
-        target: 'http://localhost:8000',
+
+      "/health": {
+        target: backend,
         changeOrigin: true,
       },
     },
   },
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/test/setup.js',
-  },
-})
+});

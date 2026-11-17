@@ -1,171 +1,177 @@
-"""
-API router for UNDOX Audit History and Activity Logging.
 
-Provides endpoints to:
-- Retrieve paginated audit event logs.
-- Filter audit logs by execution_id, recovery_plan_id, event_type, and outcome.
-- Retrieve individual audit event logs by ID.
-- Provide sub-resource audit event endpoints for executions and recovery plans.
-"""
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query
+)
 
-from typing import Optional
-from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.audit.service import (
-    AuditEventNotFoundError,
-    ExecutionNotFoundError,
-    RecoveryPlanNotFoundError,
-    get_audit_event_by_id,
-    query_audit_events,
+from ..database import get_db
+
+from ..models import (
+    AuditEvent,
+    WorkflowExecution,
+    RecoveryPlan
 )
-from backend.app.auth.dependencies import get_current_user
-from backend.app.database import get_db
-from backend.app.models.user import User
-from backend.app.schemas.audit import AuditEventResponse, AuditEventsListResponse
 
-router = APIRouter(prefix="/api/v1", tags=["Audit History"])
+from ..schemas.audit import AuditEventRead
+
+from ..audit import service
+
+from ..auth.dependencies import require_roles
 
 
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["Audit"]
+)
+
+
+# ADMIN and OPERATOR can access audit history
+AUDIT_ACCESS = require_roles(
+    "ADMIN",
+    "OPERATOR"
+)
+
+
+# List and filter audit events
 @router.get(
     "/audit-events",
-    response_model=AuditEventsListResponse,
-    status_code=status.HTTP_200_OK,
-    summary="List and filter audit events",
-    description="Retrieve paginated audit activity records filtered by execution, plan, event type, or outcome.",
+    response_model=list[AuditEventRead]
 )
-def list_audit_events(
-    execution_id: Optional[UUID] = Query(None, description="Filter by workflow execution ID"),
-    recovery_plan_id: Optional[UUID] = Query(None, description="Filter by recovery plan ID"),
-    event_type: Optional[str] = Query(None, description="Filter by event type"),
-    outcome: Optional[str] = Query(None, description="Filter by outcome status"),
-    limit: int = Query(50, ge=1, le=100, description="Maximum number of events to return"),
-    offset: int = Query(0, ge=0, description="Number of events to skip"),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> AuditEventsListResponse:
-    try:
-        items, total = query_audit_events(
-            db=db,
-            execution_id=execution_id,
-            recovery_plan_id=recovery_plan_id,
-            event_type=event_type,
-            outcome=outcome,
-            limit=limit,
-            offset=offset,
-        )
-        return AuditEventsListResponse(
-            items=[AuditEventResponse.model_validate(item) for item in items],
-            total=total,
-            limit=limit,
-            offset=offset,
-        )
-    except ExecutionNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        )
-    except RecoveryPlanNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        )
+def list_events(
+    event_type: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=100
+    ),
+    outcome: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=50
+    ),
+    execution_id: int | None = Query(
+        default=None,
+        gt=0
+    ),
+    recovery_plan_id: int | None = Query(
+        default=None,
+        gt=0
+    ),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    current_user=Depends(AUDIT_ACCESS),
+    db: Session = Depends(get_db)
+):
+
+    return service.list_audit_events(
+        db,
+        event_type,
+        outcome,
+        execution_id,
+        recovery_plan_id,
+        limit,
+        offset
+    )
 
 
+# Retrieve a single audit event
 @router.get(
     "/audit-events/{event_id}",
-    response_model=AuditEventResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Get audit event by ID",
-    description="Retrieve a single audit event record by its unique ID.",
+    response_model=AuditEventRead
 )
-def get_audit_event(
-    event_id: UUID,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> AuditEventResponse:
-    event = get_audit_event_by_id(db, event_id)
+def get_event(
+    event_id: int,
+    current_user=Depends(AUDIT_ACCESS),
+    db: Session = Depends(get_db)
+):
+
+    event = db.get(
+        AuditEvent,
+        event_id
+    )
+
     if event is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Audit event with ID '{event_id}' not found.",
+            status_code=404,
+            detail="Audit event not found"
         )
-    return AuditEventResponse.model_validate(event)
+
+    return event
 
 
+# Events associated with an execution
 @router.get(
     "/executions/{execution_id}/audit-events",
-    response_model=AuditEventsListResponse,
-    status_code=status.HTTP_200_OK,
-    summary="List audit events for an execution",
-    description="Retrieve paginated audit events specifically linked to a workflow execution attempt.",
+    response_model=list[AuditEventRead]
 )
-def list_execution_audit_events(
-    execution_id: UUID,
-    event_type: Optional[str] = Query(None, description="Filter by event type"),
-    outcome: Optional[str] = Query(None, description="Filter by outcome status"),
-    limit: int = Query(50, ge=1, le=100, description="Maximum number of events to return"),
-    offset: int = Query(0, ge=0, description="Number of events to skip"),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> AuditEventsListResponse:
-    try:
-        items, total = query_audit_events(
-            db=db,
-            execution_id=execution_id,
-            event_type=event_type,
-            outcome=outcome,
-            limit=limit,
-            offset=offset,
-        )
-        return AuditEventsListResponse(
-            items=[AuditEventResponse.model_validate(item) for item in items],
-            total=total,
-            limit=limit,
-            offset=offset,
-        )
-    except ExecutionNotFoundError as exc:
+def execution_events(
+    execution_id: int,
+    current_user=Depends(AUDIT_ACCESS),
+    db: Session = Depends(get_db)
+):
+
+    execution = db.get(
+        WorkflowExecution,
+        execution_id
+    )
+
+    if execution is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
+            status_code=404,
+            detail="Execution not found"
         )
 
+    statement = (
+        select(AuditEvent)
+        .where(
+            AuditEvent.execution_id == execution_id
+        )
+        .order_by(
+            AuditEvent.created_at.desc()
+        )
+    )
 
+    return list(
+        db.scalars(statement).all()
+    )
+
+
+# Events associated with a recovery plan
 @router.get(
     "/recovery-plans/{plan_id}/audit-events",
-    response_model=AuditEventsListResponse,
-    status_code=status.HTTP_200_OK,
-    summary="List audit events for a recovery plan",
-    description="Retrieve paginated audit events specifically linked to a recovery plan.",
+    response_model=list[AuditEventRead]
 )
-def list_recovery_plan_audit_events(
-    plan_id: UUID,
-    event_type: Optional[str] = Query(None, description="Filter by event type"),
-    outcome: Optional[str] = Query(None, description="Filter by outcome status"),
-    limit: int = Query(50, ge=1, le=100, description="Maximum number of events to return"),
-    offset: int = Query(0, ge=0, description="Number of events to skip"),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> AuditEventsListResponse:
-    try:
-        items, total = query_audit_events(
-            db=db,
-            recovery_plan_id=plan_id,
-            event_type=event_type,
-            outcome=outcome,
-            limit=limit,
-            offset=offset,
-        )
-        return AuditEventsListResponse(
-            items=[AuditEventResponse.model_validate(item) for item in items],
-            total=total,
-            limit=limit,
-            offset=offset,
-        )
-    except RecoveryPlanNotFoundError as exc:
+def recovery_events(
+    plan_id: int,
+    current_user=Depends(AUDIT_ACCESS),
+    db: Session = Depends(get_db)
+):
+
+    plan = db.get(
+        RecoveryPlan,
+        plan_id
+    )
+
+    if plan is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
+            status_code=404,
+            detail="Recovery plan not found"
         )
+
+    statement = (
+        select(AuditEvent)
+        .where(
+            AuditEvent.recovery_plan_id == plan_id
+        )
+        .order_by(
+            AuditEvent.created_at.desc()
+        )
+    )
+
+    return list(
+        db.scalars(statement).all()
+    )

@@ -1,56 +1,20 @@
-"""
-Models package for UNDOX.
-Exports all ORM models so they are registered with Base.metadata upon package import.
-"""
 
-from backend.app.database import Base
-from backend.app.models.execution import (
-    ExecutionStatus,
-    ExecutionStep,
-    ExecutionStepStatus,
-    WorkflowExecution,
-)
-from backend.app.models.recovery import (
-    RecoveryActionStatus,
-    RecoveryActionType,
-    RecoveryPlan,
-    RecoveryPlanAction,
-    RecoveryPlanStatus,
-)
-from backend.app.models.audit import (
-    AuditEvent,
-    AuditEventType,
-    AuditOutcome,
-)
-from backend.app.models.user import (
-    User,
-    UserRole,
-)
-from backend.app.models.workflow import (
-    StepStatus,
-    WorkflowInstance,
-    WorkflowStatus,
-    WorkflowStep,
-)
+from .user import User
+from .workflow import WorkflowInstance
+from .workflow_step import WorkflowStep
+from .execution import WorkflowExecution
+from .execution_step import ExecutionStep
+from .recovery_plan import RecoveryPlan
+from .recovery_action import RecoveryPlanAction
+from .audit_event import AuditEvent
 
 __all__ = [
-    "Base",
+    "User",
     "WorkflowInstance",
     "WorkflowStep",
-    "WorkflowStatus",
-    "StepStatus",
     "WorkflowExecution",
     "ExecutionStep",
-    "ExecutionStatus",
-    "ExecutionStepStatus",
     "RecoveryPlan",
     "RecoveryPlanAction",
-    "RecoveryPlanStatus",
-    "RecoveryActionType",
-    "RecoveryActionStatus",
-    "AuditEvent",
-    "AuditEventType",
-    "AuditOutcome",
-    "User",
-    "UserRole",
+    "AuditEvent"
 ]

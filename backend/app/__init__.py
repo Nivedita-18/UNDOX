@@ -1,3 +1,0 @@
-"""
-UNDOX Application Package.
-"""

@@ -1,3 +1,0 @@
-"""
-UNDOX Backend Tests Package.
-"""

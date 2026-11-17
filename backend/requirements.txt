@@ -1,11 +1,14 @@
-# UNDOX Backend Dependencies
-# Python 3.14 compatible stable releases
 
-fastapi>=0.115.0
-uvicorn>=0.30.0
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.9
-pydantic>=2.8.0
-alembic>=1.13.0
-pytest>=8.0.0
-httpx>=0.27.0
+fastapi
+uvicorn[standard]
+SQLAlchemy>=2.0
+psycopg2-binary
+pydantic-settings
+alembic
+PyJWT[crypto]
+pwdlib[argon2]
+python-multipart
+pytest
+httpx
+
+python-dotenv>=1.0
