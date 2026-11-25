@@ -13,6 +13,7 @@ import {
   Play,
   XCircle,
   ChevronDown,
+  Activity,
 } from "lucide-react";
 
 import { getWorkflows } from "../api/workflows";

@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from .config import DB_NAME
 from .database import engine
 
 from .api.auth import router as auth_router
@@ -83,7 +84,7 @@ def database_health():
         return {
             "status": "healthy",
             "database": "connected",
-            "database_name": "undox_dev"
+            "database_name": DB_NAME
         }
 
     except SQLAlchemyError:
