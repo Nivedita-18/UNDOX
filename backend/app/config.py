@@ -10,7 +10,8 @@ load_dotenv(dotenv_path=ENV_FILE, override=False)
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production").lower()
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
-# Azure Database for PostgreSQL connection settings
+# PostgreSQL connection settings (supports unified DATABASE_URL or discrete DB_* params)
+DATABASE_URL_ENV = os.getenv("DATABASE_URL", "").strip()
 DB_USER = os.getenv("DB_USER", "").strip()
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_HOST = os.getenv("DB_HOST", "").strip()

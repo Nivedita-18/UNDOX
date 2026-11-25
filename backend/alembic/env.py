@@ -24,8 +24,13 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline():
+    url_str = (
+        DATABASE_URL
+        if isinstance(DATABASE_URL, str)
+        else DATABASE_URL.render_as_string(hide_password=False)
+    )
     context.configure(
-        url=DATABASE_URL.render_as_string(hide_password=False),
+        url=url_str,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

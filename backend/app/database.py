@@ -3,6 +3,7 @@ from sqlalchemy.engine import URL
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from .config import (
+    DATABASE_URL_ENV,
     DB_USER,
     DB_PASSWORD,
     DB_HOST,
@@ -11,21 +12,28 @@ from .config import (
     DB_SSLMODE,
 )
 
-if not DB_HOST or not DB_USER or not DB_PASSWORD:
-    raise RuntimeError(
-        "Azure PostgreSQL settings are missing. Create backend/.env using "
-        "backend/.env.azure.example and configure DB_HOST, DB_USER and DB_PASSWORD."
-    )
+if DATABASE_URL_ENV:
+    url_str = DATABASE_URL_ENV
+    if url_str.startswith("postgres://"):
+        url_str = url_str.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif url_str.startswith("postgresql://"):
+        url_str = url_str.replace("postgresql://", "postgresql+psycopg2://", 1)
+    DATABASE_URL = url_str
+else:
+    if not DB_HOST or not DB_USER or not DB_PASSWORD:
+        raise RuntimeError(
+            "PostgreSQL settings are missing. Configure DATABASE_URL or DB_HOST, DB_USER and DB_PASSWORD."
+        )
 
-DATABASE_URL = URL.create(
-    drivername="postgresql+psycopg2",
-    username=DB_USER,
-    password=DB_PASSWORD,
-    host=DB_HOST,
-    port=DB_PORT,
-    database=DB_NAME,
-    query={"sslmode": DB_SSLMODE},
-)
+    DATABASE_URL = URL.create(
+        drivername="postgresql+psycopg2",
+        username=DB_USER,
+        password=DB_PASSWORD,
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        query={"sslmode": DB_SSLMODE},
+    )
 
 engine = create_engine(
     DATABASE_URL,
